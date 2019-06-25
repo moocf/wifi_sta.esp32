@@ -1,2 +1,6 @@
-# wifi_sta
-Setup WiFi as a station and connect to AP.
+Start WiFi as a station.<br>
+
+```text
+includePath:
+/home/wolfram77/esp/esp-idf/components/**
+```
