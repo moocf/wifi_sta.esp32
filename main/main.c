@@ -1,6 +1,7 @@
 #include <esp_wifi.h>
 #include <esp_event.h>
 #include <nvs_flash.h>
+#include <lwip/sys.h>
 #include "macros.h"
 
 
@@ -16,26 +17,25 @@ static esp_err_t nvs_init() {
 
 
 static void on_wifi(void* arg, esp_event_base_t base, int32_t id, void* data) {
-  if (id == WIFI_EVENT_AP_STACONNECTED) {
-    wifi_event_ap_staconnected_t *d = (wifi_event_ap_staconnected_t*) data;
-    printf("Station " MACSTR " joined, AID = %d (event)\n", MAC2STR(d->mac), d->aid);
-  } else if (id == WIFI_EVENT_AP_STADISCONNECTED) {
-    wifi_event_ap_stadisconnected_t *d = (wifi_event_ap_stadisconnected_t*) data;
-    printf("Station " MACSTR " left, AID = %d (event)\n", MAC2STR(d->mac), d->aid);
-  } else if(id == WIFI_EVENT_SCAN_DONE) {
-    printf("- WiFi scan done (event)\n");
-    printf("- Get scanned AP records\n");
-    static uint16_t count = 32;
-    static wifi_ap_record_t records[32];
-    ERETV( esp_wifi_scan_get_ap_records(&count, records) );
-    for(int i=0; i<count; i++) {
-      printf("%d. %s : %d\n", i+1, records[i].ssid, records[i].rssi);
-    }
+  if (id == WIFI_EVENT_STA_CONNECTED) {
+    wifi_event_sta_connected_t *d = (wifi_event_sta_connected_t*) data;
+    printf("- Connected to %s AP (channel %d) (event)\n", d->ssid, d->channel);
+  } else if (id == WIFI_EVENT_STA_DISCONNECTED) {
+    wifi_event_sta_disconnected_t *d = (wifi_event_sta_disconnected_t*) data;
+    printf("- Disconnected from AP %s (event)\n", d->ssid);
   }
 }
 
 
-static esp_err_t wifi_ap() {
+static void on_ip(void *arg, esp_event_base_t base, int32_t id, void *data) {
+  if (id == IP_EVENT_STA_GOT_IP) {
+    ip_event_got_ip_t *d = (ip_event_got_ip_t*) data;
+    printf("- Got IP %s (event)\n", ip4addr_ntoa(&d->ip_info.ip));
+  }
+}
+
+
+static esp_err_t wifi_sta() {
   printf("- Initialize TCP/IP adapter\n");
   tcpip_adapter_init();
   printf("- Create default event loop\n");
@@ -45,22 +45,24 @@ static esp_err_t wifi_ap() {
   ERET( esp_wifi_init(&cfg) );
   printf("- Register WiFi event handler\n");
   ERET( esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &on_wifi, NULL) );
-  printf("- Set WiFi mode as AP\n");
-  ERET( esp_wifi_set_mode(WIFI_MODE_AP) );
+  printf("- Register IP event handler\n");
+  ERET( esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &on_ip, NULL) );
+  printf("- Set WiFi mode as station\n");
+  ERET( esp_wifi_set_mode(WIFI_MODE_STA) );
   printf("- Set WiFi configuration\n");
-  wifi_config_t wifi_config = {.ap = {
-    .ssid = "charmender",
-    .password = "charmender",
-    .ssid_len = 0,
-    .channel = 0,
-    .authmode = WIFI_AUTH_WPA_PSK,
-    .ssid_hidden = 0,
-    .max_connection = 4,
-    .beacon_interval = 100,
+  wifi_config_t wifi_config = {.sta = {
+    .ssid = "belkin.a58",
+    .password = "ceca966f",
+    .scan_method = WIFI_ALL_CHANNEL_SCAN,
+    .sort_method = WIFI_CONNECT_AP_BY_SIGNAL,
+    .threshold.rssi = -127,
+    .threshold.authmode = WIFI_AUTH_OPEN,
   }};
-  ERET( esp_wifi_set_config(ESP_IF_WIFI_AP, &wifi_config) );
+  ERET( esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config) );
   printf("- Start WiFi\n");
   ERET( esp_wifi_start() );
+  printf("- Connect to set AP\n");
+  ERET( esp_wifi_connect() );
   return ESP_OK;
 }
 
@@ -68,5 +70,5 @@ static esp_err_t wifi_ap() {
 void app_main() {
   printf("- Initialize NVS\n");
   ESP_ERROR_CHECK( nvs_init() );
-  ESP_ERROR_CHECK( wifi_ap() );
+  ESP_ERROR_CHECK( wifi_sta() );
 }
